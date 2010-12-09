@@ -418,32 +418,37 @@ static int writeStringTable( int fd )
     return 0;
 }
 
-static int patchHeaders( const char *pathToSelf )
+static int patchHeaders( const char *pathToSelf, ElfW(Ehdr) *archhdr )
 {
     int maxalign = 1;
     int align;
     int payloadSize, symtabSize, strtabSize;
-    int fd;
-    ElfW(Ehdr) ownhdr;
     struct Resource *it;
+    ElfW(Ehdr) ownhdr;
 
-    /* Look into our own ELF header to determine the machine architecture .*/
-    if ( ( fd = open( pathToSelf, O_RDONLY ) ) == -1 ) {
-        fprintf( stderr, "Failed to open %s for reading: %s\n", pathToSelf, strerror( errno ) );
-        return -1;
-    }
-    if ( read( fd, &ownhdr, sizeof( ownhdr ) ) == -1 ) {
-        fprintf( stderr, "Failed to read from %s: %s\n", pathToSelf, strerror( errno ) );
-        return -1;
-    }
-    close( fd );
+    if (!archhdr) {
+	/* If Architecture specific stuff is not given, we just take the values
+	 * of our own elfrc binary. */
 
-    /* Architecture specific stuff, we just take the values
-     * of our own elfrc binary. */
-    hdr.e_machine = ownhdr.e_machine;
-    hdr.e_ident[EI_OSABI] = ownhdr.e_ident[EI_OSABI];
-    hdr.e_ident[EI_ABIVERSION] = ownhdr.e_ident[EI_ABIVERSION];
-    hdr.e_flags = ownhdr.e_flags;
+	int fd;
+
+	/* Look into our own ELF header to determine the machine architecture .*/
+	if ( ( fd = open( pathToSelf, O_RDONLY ) ) == -1 ) {
+	    fprintf( stderr, "Failed to open %s for reading: %s\n", pathToSelf, strerror( errno ) );
+	    return -1;
+	}
+	if ( read( fd, &ownhdr, sizeof( ownhdr ) ) == -1 ) {
+	    fprintf( stderr, "Failed to read from %s: %s\n", pathToSelf, strerror( errno ) );
+	    return -1;
+	}
+	close( fd );
+
+	archhdr = &ownhdr;
+    }
+    hdr.e_machine = archhdr->e_machine;
+    hdr.e_ident[EI_OSABI] = archhdr->e_ident[EI_OSABI];
+    hdr.e_ident[EI_ABIVERSION] = archhdr->e_ident[EI_ABIVERSION];
+    hdr.e_flags = archhdr->e_flags;
 
     /* Calculate alignment needed for .rodata */
     for ( it = resources; it != 0; it = it->next ) {
@@ -922,7 +927,7 @@ int main( int argc, char **argv )
     if ( loadResources( argv[0] ) == -1 )
         return -1;
 
-    if ( patchHeaders( pathToSelf ) == -1 )
+    if ( patchHeaders( pathToSelf, NULL ) == -1 )
         return -1;
 
     if ( writeELFRelocatable( objectOutput ) == -1 )
